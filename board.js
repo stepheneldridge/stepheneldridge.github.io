@@ -56,21 +56,34 @@ class Board{
             "white": [],
             "black": []
         }
+        this.checks = {
+            "white": false,
+            "black": false
+        }
         this.mouse_x = 0;
         this.mouse_y = 0;
+        this.piece_types = [Piece.PAWN, Piece.ROOK, Piece.KNIGHT, Piece. BISHOP, Piece.QUEEN, Piece.KING];
     }
 
     //tags jump noncapture captureonly first blocked repeat king selfcapture
-    get_valid_moves(x, y, movements){
+    get_valid_moves(x, y, movements, ignore, override){
         let valid = []
-        let self = this.get_tile(x, y);
+        let self;
+        if(override){
+            self = override;
+        }else{
+            self = this.get_tile(x, y);
+        }
+        if(!ignore)ignore = [];
         let dir = self.color == "white" ? -1 : 1;
         for(let i of movements){
             let tags = i.tags;
             let moves = i.moves;
             if(tags.includes("blocked")){
                 let blocker = [x + i.by[0], y + i.by[1] * dir];
-                if(this.get_tile(...blocker) != null){
+                if(this.has_array(ignore, blocker)){
+
+                }else if(this.get_tile(...blocker) != null){
                     continue;
                 }
             }
@@ -80,6 +93,9 @@ class Board{
                     let coord = [x + c[0], y + c[1] * dir]
                     if(this.is_inside(...coord)){
                         let t = this.get_tile(...coord);
+                        if(this.has_array(ignore, coord)){
+                            t = null;
+                        }
                         if(t == null){
                             if(tags.includes("captureonly"))continue;
                             valid.push(coord);
@@ -96,6 +112,9 @@ class Board{
                     let coord = [x + v[0], y + v[1] * dir];
                     while(this.is_inside(...coord)){
                         let t = this.get_tile(...coord);
+                        if(this.has_array(ignore, coord)){
+                            t = null;
+                        }
                         if(t == null){
                             if(tags.includes("captureonly"))continue;
                         }else{
@@ -115,6 +134,9 @@ class Board{
                     let coord = [x + v[0], y + v[1] * dir];
                     while(this.is_inside(...coord)){
                         let t = this.get_tile(...coord);
+                        if(this.has_array(ignore, coord)){
+                            t = null;
+                        }
                         if(t != null){
                             if(t.get_tags().includes("castle") && !t.has_moved){
                                 console.log(t)
@@ -128,7 +150,47 @@ class Board{
                 }
             }
         }
+        if(self.get_tags().includes("king") && !override){
+            let unchecked = []
+            for(let i of valid){
+                if(!this.is_attacked(i[0], i[1], [[x, y]], self)){
+                    unchecked.push(i);
+                }
+            }
+            valid = unchecked;
+        }
         return valid;
+    }
+
+    is_attacked(x, y, ignore, override){
+        let moves = []
+        let self = this.get_tile(x, y);
+        if(override){
+            self = override;
+        }
+        if(!ignore){
+            ignore = [[]];
+        }
+        for(let i of this.piece_types){
+            let c = this.get_valid_moves(x, y, i.moves, ignore, self);
+            for(let j of c){
+                let t = this.get_tile(...j);
+                if(t != null && t.id == i.id && t.color != self.color){
+                    moves.push(j);
+                }
+            }
+        }
+        return moves.length > 0;
+    }
+
+    find_king(color){
+        for(let x = 0; x < this.tiles.length; x++){
+            for(let y = 0; y < this.tiles[x].length; y++){
+                let t = this.tiles[x][y];
+                if(t != null && t.get_tags().includes("king") && t.color == color)return [x, y, t];
+            }
+        }
+        return null;
     }
 
     select(x, y){
@@ -192,6 +254,14 @@ class Board{
                     this.selected_piece[2].is_drag = false;
                     if(this.has_array(this.selected_piece[3], [tx, ty])){
                         this.move_tile(tx, ty, ...this.selected_piece);
+                        for(let c in this.checks){
+                            let k = this.find_king(c);
+                            if(k != null){
+                                this.checks[c] = this.is_attacked(k[0], k[1]);
+                            }else{
+                                this.checks[c] = false;
+                            }
+                        }
                     }
                     this.selected_piece = null;
                     return true;
@@ -258,6 +328,9 @@ class Board{
             }
         }
         if(extra && this.set_tile(tx, ty, p, selfcap)){
+            if(p.should_promote(tx, ty)){
+                console.log("promotion");
+            }
             p.has_moved = true;
             this.tiles[fx][fy] = null;
             return true;
@@ -306,6 +379,14 @@ class Board{
             }
             check = check == 0 ? 1 : 0;
         }
+        for(let c in this.checks){
+            if(!this.checks[c])continue;
+            let k = this.find_king(c);
+            ctx.fillStyle = "red";
+            ctx.globalAlpha = 0.2;
+            ctx.fillRect(k[0] * this.size_x, k[1] * this.size_y, this.size_x, this.size_y);
+            ctx.globalAlpha = 1;
+        }
         if(this.selected_piece != null){
             let mc = this.get_mouse_tile();
             for(let i of this.selected_piece[3]){
@@ -328,6 +409,7 @@ class Board{
                     ctx.fill();
                 }
             }
+            ctx.fillStyle = "green";
             ctx.globalAlpha = 0.2;
             ctx.fillRect(this.selected_piece[0] * this.size_x, this.selected_piece[1] * this.size_y, this.size_x, this.size_y);
             ctx.globalAlpha = 0.5;
@@ -351,6 +433,7 @@ class Board{
 
 class Piece{
     static KNIGHT = {
+        "id": "knight",
         "moves": [
             {"moves": [[1, 2], [2, 1], [-1, 2], [2, -1], [1, -2], [-2, 1], [-1, -2], [-2, -1]], "tags": ["jump"]}
         ],
@@ -362,6 +445,7 @@ class Piece{
     }
 
     static ROOK = {
+        "id": "rook",
         "tags": ["castle"],
         "moves": [
             {"moves": [[1, 0], [-1, 0], [0, 1], [0, -1]], "tags": ["repeat"]}
@@ -374,6 +458,7 @@ class Piece{
     }
 
     static BISHOP = {
+        "id": "bishop",
         "moves": [
             {"moves": [[1, 1], [-1, -1], [-1, 1], [1, -1]], "tags": ["repeat"]}
         ],
@@ -385,6 +470,7 @@ class Piece{
     }
 
     static QUEEN = {
+        "id": "queen",
         "moves": [
             {"moves": [[0, 1], [0, -1], [-1, 0], [1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]], "tags": ["repeat"]}
         ],
@@ -396,6 +482,7 @@ class Piece{
     }
 
     static KING = {
+        "id": "king",
         //needs handlers for checks
         "tags": ["king"],
         "moves": [
@@ -411,6 +498,21 @@ class Piece{
     }
 
     static PAWN = {
+        "id": "pawn",
+        "tags": ["promote"],
+        "promotions": {
+            "forced": true,
+            "region": {
+                "black": function(x, y){
+                    return y >= 7
+                },
+                "white": function(x, y){
+                    return y <= 0;
+                }
+            },
+            "options": [Piece.ROOK, Piece.KNIGHT, Piece.BISHOP, Piece.QUEEN],
+            "default": Piece.QUEEN
+        },
         "moves":[
             {"moves": [[0, 1]], "tags": ["jump", "noncapture"]},
             {"moves": [[1, 1], [-1, 1]], "tags": ["captureonly", "jump"]}, //en passant as well?
@@ -431,6 +533,8 @@ class Piece{
         this.drag_x = 0;
         this.drag_y = 0;
         this.has_moved = false;
+        this.tags = this.preset.tags ? this.preset.tags : [];
+        this.id = this.preset.id;
     }
 
     get_moves(){
@@ -438,7 +542,14 @@ class Piece{
     }
 
     get_tags(){
-        return this.preset.tags != null ? this.preset.tags : [];
+        return this.tags;
+    }
+
+    should_promote(x, y){
+        if(this.tags.includes("promote")){
+            return this.preset.promotions.region[this.color](x,y);
+        }
+        return false;
     }
 
     get_draw(){

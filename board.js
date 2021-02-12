@@ -66,7 +66,7 @@ class Board{
     }
 
     //tags jump noncapture captureonly first blocked repeat king selfcapture
-    get_valid_moves(x, y, movements, ignore, override){
+    get_valid_moves(x, y, movements, ignore, walls, override){
         let valid = []
         let self;
         if(override){
@@ -74,7 +74,8 @@ class Board{
         }else{
             self = this.get_tile(x, y);
         }
-        if(!ignore)ignore = [];
+        if(!ignore)ignore = [[]];
+        if(!walls)walls = [[]];
         let dir = self.color == "white" ? -1 : 1;
         for(let i of movements){
             let tags = i.tags;
@@ -100,6 +101,7 @@ class Board{
                             if(tags.includes("captureonly"))continue;
                             valid.push(coord);
                         }else{
+                            if(this.has_array(walls, coord))continue;
                             if(tags.includes("noncapture"))continue;
                             if((tags.includes("selfcapture") && t.color == self.color) || self.color != t.color){
                                 valid.push([...coord, {"selfcapture": tags.includes("selfcapture")}]);
@@ -111,6 +113,7 @@ class Board{
                 for(let v of moves){
                     let coord = [x + v[0], y + v[1] * dir];
                     while(this.is_inside(...coord)){
+                        if(this.has_array(walls, coord))break;
                         let t = this.get_tile(...coord);
                         if(this.has_array(ignore, coord)){
                             t = null;
@@ -130,6 +133,7 @@ class Board{
                 }
             }else if(tags.includes("castle")){
                 if(self.has_moved)continue;
+                if(this.checks[self.color])continue;
                 for(let v of moves){
                     let coord = [x + v[0], y + v[1] * dir];
                     while(this.is_inside(...coord)){
@@ -139,7 +143,17 @@ class Board{
                         }
                         if(t != null){
                             if(t.get_tags().includes("castle") && !t.has_moved){
-                                console.log(t)
+                                let through_check = false;
+                                if(!override){
+                                    for(let s = 0; s < i.distance; s++){
+                                        let temp = [x + v[0] * s, y + v[1] * dir * s]
+                                        if(this.is_attacked(...temp, [[x, y]], [[]], self)){
+                                            through_check = true
+                                            break;
+                                        }
+                                    }
+                                }
+                                if(through_check)break;
                                 let dest = [x + v[0] * i.distance, y + v[1] * dir * i.distance]
                                 valid.push([dest[0], dest[1], {"castle":{"orig": coord, "dest": [dest[0] - v[0], dest[1] - v[1] * dir]}}]);
                             }
@@ -153,7 +167,16 @@ class Board{
         if(self.get_tags().includes("king") && !override){
             let unchecked = []
             for(let i of valid){
-                if(!this.is_attacked(i[0], i[1], [[x, y]], self)){
+                if(!this.is_attacked(i[0], i[1], [[x, y]], [[]], self)){
+                    unchecked.push(i);
+                }
+            }
+            valid = unchecked;
+        }else if(!override){
+            let unchecked = [];
+            let k = this.find_king(self.color);
+            for(let i of valid){
+                if(!this.is_attacked(k[0], k[1], [[x, y]], [i], k[2])){
                     unchecked.push(i);
                 }
             }
@@ -162,7 +185,8 @@ class Board{
         return valid;
     }
 
-    is_attacked(x, y, ignore, override){
+    //issue with pieces that can attack with a blockable jump, chinese knight
+    is_attacked(x, y, ignore, walls, override){
         let moves = []
         let self = this.get_tile(x, y);
         if(override){
@@ -171,8 +195,11 @@ class Board{
         if(!ignore){
             ignore = [[]];
         }
+        if(!walls){
+            walls = [[]];
+        }
         for(let i of this.piece_types){
-            let c = this.get_valid_moves(x, y, i.moves, ignore, self);
+            let c = this.get_valid_moves(x, y, i.moves, ignore, walls, self);
             for(let j of c){
                 let t = this.get_tile(...j);
                 if(t != null && t.id == i.id && t.color != self.color){

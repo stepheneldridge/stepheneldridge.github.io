@@ -44,6 +44,54 @@ function mouse_handler(event){
     board.draw(context);
 }
 
+class PromotionWindow{
+    constructor(x, y, p, b){
+        this.x = x;
+        this.y = y;
+        this.piece = p;
+        this.board = b;
+        this.promotions = this.piece.get_promotions();
+        this.window_x = (this.board.tiles_x - this.promotions.length) / 2;
+        this.window_y = this.board.tiles_y / 2 - 0.5;
+        this.active = null;
+    }
+
+    mouse_events(event){
+        let type = event.type;
+        let btn = event.button;
+        this.mouse_x = event.offsetX;
+        this.mouse_y = event.offsetY;
+        if(btn != 0)return;
+        let tile_index = Math.floor(this.mouse_x / this.board.size_x - this.window_x);
+        let y_frame = this.mouse_y / this.board.size_y - this.window_y;
+        this.active = null;
+        if(tile_index < 0 || tile_index >= this.promotions.length || y_frame < 0 || y_frame >= 1)return;
+        this.active = tile_index;
+        if(type == "mousedown"){
+            this.board.do_promotion(this.x, this.y, this.promotions[this.active]);
+        }
+    }
+
+    draw(ctx){
+        ctx.fillStyle = "black";
+        ctx.globalAlpha = 0.4;
+        ctx.fillRect(0, 0, this.board.width, this.board.height);
+        ctx.globalAlpha = 1;
+        let color = this.piece.color;
+        let border = 20;
+        ctx.fillStyle = "lightgrey";
+        ctx.fillRect(this.window_x * this.board.size_x - border, this.window_y * this.board.size_y - border, this.board.size_x * this.promotions.length + 2 * border, this.board.size_y + 2 * border);
+        if(this.active != null){
+            ctx.fillStyle = "green";
+            ctx.globalAlpha = 0.2;
+            ctx.fillRect((this.window_x + this.active) * this.board.size_x, this.window_y * this.board.size_y, this.board.size_x, this.board.size_y);
+            ctx.globalAlpha = 1;
+        }
+        for(let i = 0; i < this.promotions.length; i++){
+            Piece.draw_piece(ctx, this.window_x + i, this.window_y, this.board.size_x, this.board.size_y, color, this.promotions[i].icon[color]);
+        }
+    }
+}
 class Board{
     constructor(w, h){
         this.width = w;
@@ -63,6 +111,9 @@ class Board{
         this.mouse_x = 0;
         this.mouse_y = 0;
         this.piece_types = [Piece.PAWN, Piece.ROOK, Piece.KNIGHT, Piece. BISHOP, Piece.QUEEN, Piece.KING];
+        this.ply = 1;
+        this.turn = "white";
+        this.promotion_window = false;
     }
 
     //tags jump noncapture captureonly first blocked repeat king selfcapture
@@ -245,6 +296,9 @@ class Board{
     }
 
     mouse_events(event){
+        if(this.promotion_window){
+            return this.promotion_window.mouse_events(event);
+        }
         var btn = event.button;
         this.mouse_x = event.offsetX;
         this.mouse_y = event.offsetY;
@@ -338,6 +392,19 @@ class Board{
         return null;
     }
 
+    promote_piece(x, y, piece){
+        this.promotion_window = new PromotionWindow(x, y, piece, this);
+    }
+
+    do_promotion(x, y, piece){
+        this.promotion_window = null;
+        let t = this.get_tile(x, y);
+        if(!t)return console.error("Promotion piece could not be found");
+        let new_t = new Piece(piece, t.color);
+        new_t.set_was(t);
+        this.tiles[x][y] = new_t;
+    }
+
     move_tile(tx, ty, fx, fy, p, valid){
         let extra = true;
         let selfcap = false;
@@ -356,7 +423,7 @@ class Board{
         }
         if(extra && this.set_tile(tx, ty, p, selfcap)){
             if(p.should_promote(tx, ty)){
-                console.log("promotion");
+                this.promote_piece(tx, ty, p);
             }
             p.has_moved = true;
             this.tiles[fx][fy] = null;
@@ -368,6 +435,9 @@ class Board{
         let t = this.get_tile(x, y);
         if(t != null){
             if(t.color != p.color || selfcap){
+                if(t.was){
+                    t = t.was;
+                }
                 this.pockets[p.color].push(t);
                 this.tiles[x][y] = p;
                 return true;
@@ -440,7 +510,7 @@ class Board{
             ctx.globalAlpha = 0.2;
             ctx.fillRect(this.selected_piece[0] * this.size_x, this.selected_piece[1] * this.size_y, this.size_x, this.size_y);
             ctx.globalAlpha = 0.5;
-            this.selected_piece[2].get_draw()(ctx, this.selected_piece[0], this.selected_piece[1], this.size_x, this.size_y);
+            this.selected_piece[2].draw(ctx, this.selected_piece[0], this.selected_piece[1], this.size_x, this.size_y);
             ctx.globalAlpha = 1;
         }
         for(let i in this.tiles){
@@ -448,12 +518,16 @@ class Board{
                 let t = this.tiles[i][j];
                 if(t != null){
                     if(t.is_drag){
-                        t.get_draw()(ctx, t.drag_x - 0.5, t.drag_y - 0.5, this.size_x, this.size_y);
+                        t.draw(ctx, t.drag_x - 0.5, t.drag_y - 0.5, this.size_x, this.size_y);
                     }else{
-                        t.get_draw()(ctx, i, j, this.size_x, this.size_y);
+                        t.draw(ctx, i, j, this.size_x, this.size_y);
                     }
                 }
             }
+        }
+        //promotion gui wip
+        if(this.promotion_window){
+            this.promotion_window.draw(ctx);
         }
     }
 }
@@ -562,6 +636,11 @@ class Piece{
         this.has_moved = false;
         this.tags = this.preset.tags ? this.preset.tags : [];
         this.id = this.preset.id;
+        this.was = null;
+    }
+
+    set_was(was){
+        this.was = was;
     }
 
     get_moves(){
@@ -579,14 +658,20 @@ class Piece{
         return false;
     }
 
-    get_draw(){
-        return function(ctx, x, y, sx, sy){
-            ctx.fillStyle = this.color;
-            let size = Math.min(sx, sy); 
-            ctx.font = size + "px Arial";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(this.icon, x * sx + sx / 2, y * sy + sy / 2);
-        }.bind(this);
+    get_promotions(){
+        return this.preset.promotions.options;
+    }
+
+    draw(ctx, x, y, sx, sy){
+        Piece.draw_piece(ctx, x, y, sx, sy, this.color, this.icon);
+    }
+
+    static draw_piece(ctx, x, y, sx, sy, color, icon){
+        ctx.fillStyle = color;
+        let size = Math.min(sx, sy); 
+        ctx.font = size + "px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(icon, x * sx + sx / 2, y * sy + sy / 2);
     }
 }

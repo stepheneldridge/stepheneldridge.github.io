@@ -93,6 +93,39 @@ class PromotionWindow{
     }
 }
 
+class EndWindow{
+    constructor(result, board){
+        this.result = result;
+        this.board = board;
+        if(this.result == "draw"){
+            this.message = "Draw";
+        }else{
+            this.message = this.result.charAt(0).toUpperCase() + this.result.slice(1) + " Wins";
+        }
+    }
+
+    mouse_events(event){
+
+    }
+
+    draw(ctx){
+        ctx.fillStyle = "black";
+        ctx.globalAlpha = 0.4;
+        ctx.fillRect(0, 0, this.board.width, this.board.height);
+        ctx.globalAlpha = 1;
+        if(this.result == "draw"){
+            ctx.fillStyle = "grey";
+        }else{
+            ctx.fillStyle = this.result;
+        }
+        let size = this.board.height / 10;
+        ctx.font = size + "px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(this.message, this.board.width / 2, this.board.height / 2);
+    }
+}
+
 class Board{
     constructor(w, h){
         this.width = w;
@@ -264,6 +297,21 @@ class Board{
         return moves.length > 0;
     }
 
+    has_moves(color){
+        for(let i = 0; i < this.tiles.length; i++){
+            for(let j = 0; j < this.tiles[i].length; j++){
+                let t = this.tiles[i][j];
+                if(t == null)continue;
+                if(t.color == color){
+                    if(this.get_valid_moves(i, j, t.get_moves()).length > 0){
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     find_king(color){
         for(let x = 0; x < this.tiles.length; x++){
             for(let y = 0; y < this.tiles[x].length; y++){
@@ -302,6 +350,9 @@ class Board{
     mouse_events(event){
         if(this.promotion_window){
             return this.promotion_window.mouse_events(event);
+        }
+        if(this.end_window){
+            return this.end_window.mouse_events(event);
         }
         var btn = event.button;
         this.mouse_x = event.offsetX;
@@ -348,6 +399,12 @@ class Board{
                             }else{
                                 this.checks[c] = false;
                             }
+
+                        }
+                        let can_move = this.has_moves(this.turn);
+                        if(!can_move){
+                            let result = !this.checks[this.turn] ? "draw" : this.turn == "white" ? "black" : "white";
+                            this.end_window = new EndWindow(result, this);
                         }
                     }
                     this.selected_piece = null;
@@ -534,6 +591,9 @@ class Board{
         }
         if(this.promotion_window){
             this.promotion_window.draw(ctx);
+        }
+        if(this.end_window){
+            this.end_window.draw(ctx);
         }
     }
 }

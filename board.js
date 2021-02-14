@@ -92,6 +92,7 @@ class PromotionWindow{
         }
     }
 }
+
 class Board{
     constructor(w, h){
         this.width = w;
@@ -226,12 +227,14 @@ class Board{
         }else if(!override){
             let unchecked = [];
             let k = this.find_king(self.color);
-            for(let i of valid){
-                if(!this.is_attacked(k[0], k[1], [[x, y]], [i], k[2])){
-                    unchecked.push(i);
+            if(k){
+                for(let i of valid){
+                    if(!this.is_attacked(k[0], k[1], [[x, y]], [i], k[2])){
+                        unchecked.push(i);
+                    }
                 }
+                valid = unchecked;
             }
-            valid = unchecked;
         }
         return valid;
     }
@@ -274,6 +277,7 @@ class Board{
     select(x, y){
         let tile = this.get_tile(x, y);
         if(tile != null){
+            if(tile.color != this.turn)return false;
             let valid = this.get_valid_moves(x, y, tile.get_moves());
             this.selected_piece = [x, y, tile, valid];
             this.selected_piece[2].is_drag = true;
@@ -335,6 +339,8 @@ class Board{
                     this.selected_piece[2].is_drag = false;
                     if(this.has_array(this.selected_piece[3], [tx, ty])){
                         this.move_tile(tx, ty, ...this.selected_piece);
+                        this.turn = this.turn == "white" ? "black" : "white";
+                        this.ply += 1;
                         for(let c in this.checks){
                             let k = this.find_king(c);
                             if(k != null){
@@ -392,6 +398,7 @@ class Board{
         return null;
     }
 
+    //shogi can promote when leaving, not possible atm
     promote_piece(x, y, piece){
         this.promotion_window = new PromotionWindow(x, y, piece, this);
     }
@@ -525,7 +532,6 @@ class Board{
                 }
             }
         }
-        //promotion gui wip
         if(this.promotion_window){
             this.promotion_window.draw(ctx);
         }

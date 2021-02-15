@@ -36,6 +36,7 @@ function init(){
     board.set_tile(5, 7, new Piece(Piece.BISHOP, "white"));
     board.set_tile(6, 7, new Piece(Piece.KNIGHT, "white"));
     board.set_tile(7, 7, new Piece(Piece.ROOK, "white"));
+    board.draw_repeats.previous.push(board.hash_position()); //add after game start
     board.draw(context);
 }
 
@@ -130,9 +131,9 @@ class Board{
     constructor(w, h){
         this.width = w;
         this.height = h;
-        this.set_grid(8, 8);
-        this.checkered = true;
-        this.check_colors = ["#f0d9b5", "#b58863"]
+        this.set_grid(8, 8); // hard coded for now
+        this.checkered = true; //
+        this.check_colors = ["#f0d9b5", "#b58863"]; //
         this.selected_piece = null;
         this.pockets = {
             "white": [],
@@ -144,12 +145,41 @@ class Board{
         }
         this.mouse_x = 0;
         this.mouse_y = 0;
-        this.piece_types = [Piece.PAWN, Piece.ROOK, Piece.KNIGHT, Piece. BISHOP, Piece.QUEEN, Piece.KING];
+        this.piece_types = [Piece.PAWN, Piece.ROOK, Piece.KNIGHT, Piece. BISHOP, Piece.QUEEN, Piece.KING]; //
+        this.piece_index = [];
+        for(let i = 0; i < this.piece_types.length; i++){
+            this.piece_index.push(this.piece_types[i].id);
+        }
         this.ply = 1;
         this.turn = "white";
         this.promotion_window = false;
+        this.set_draw_time(100, [Piece.PAWN.id]); // 100 ply = 50 moves
+        this.set_draw_repeats(3); // 3 fold repetition
+        this.move_history = [];
     }
 
+    set_draw_time(time, reset_pieces){
+        if(time <= 0){
+            delete this.draw_timer;
+            return;
+        }
+        this.draw_timer = {
+            "time": time,
+            "reset_pieces": reset_pieces,
+            "last_reset": 0
+        };
+    }
+
+    set_draw_repeats(r){
+        if(r <= 0){
+            delete this.draw_repeats;
+            return;
+        }
+        this.draw_repeats = {
+            "repeats": r,
+            "previous": []
+        }
+    }
     //tags jump noncapture captureonly first blocked repeat king selfcapture
     get_valid_moves(x, y, movements, ignore, walls, override){
         let valid = []
@@ -322,6 +352,56 @@ class Board{
         return null;
     }
 
+    check_draws(){
+        if(this.draw_timer){ // 50 move rule
+            let last = this.move_history[this.move_history.length - 1];
+            if(this.draw_timer.reset_pieces.includes(last.piece_id) || last.data.capture){
+                this.draw_timer.last_reset = 0;
+            }else{
+                this.draw_timer.last_reset += 1;
+            }
+            if(this.draw_timer.time == this.draw_timer.last_reset){
+                return true;
+            }
+        }
+        if(this.draw_repeats){
+            let new_hash = this.hash_position();
+            let count = this.draw_repeats.previous.reduce(
+                function(a, v){
+                    return v == new_hash ? a + 1 : a
+                }, 1
+            )
+            if(count >= this.draw_repeats.repeats){
+                return true;
+            }
+            this.draw_repeats.previous.push(new_hash);
+        }
+        return false;
+    }
+
+    file_label(x){
+        let r = x / 26;
+        let file = "";
+        for(let i = 0; i <= r; i++){
+            file += String.fromCharCode(x % 26 + 97);
+        }
+        return file;
+    }
+
+    hash_position(){
+        let hash = "";
+        for(let i = 0; i < this.tiles.length; i++){
+            for(let j = 0; j < this.tiles[i].length; j++){
+                let p = this.tiles[i][j];
+                if(p != null){
+                    hash += "#" + this.piece_index.indexOf(p.id) + ":" + (i * this.tiles_y + j);
+                }
+            }
+        }
+        hash += "|" + (this.turn == "white" ? 0 : 1);
+        return hash;
+    }
+
     select(x, y){
         let tile = this.get_tile(x, y);
         if(tile != null){
@@ -402,9 +482,12 @@ class Board{
 
                         }
                         let can_move = this.has_moves(this.turn);
-                        if(!can_move){
+                        if(!can_move){ //checkmate and stalemate
                             let result = !this.checks[this.turn] ? "draw" : this.turn == "white" ? "black" : "white";
                             this.end_window = new EndWindow(result, this);
+                        }
+                        if(this.check_draws()){
+                            this.end_window = new EndWindow("draw", this);
                         }
                     }
                     this.selected_piece = null;
@@ -466,12 +549,15 @@ class Board{
         if(!t)return console.error("Promotion piece could not be found");
         let new_t = new Piece(piece, t.color);
         new_t.set_was(t);
+        let last_history = this.move_history[this.move_history.length - 1];
+        last_history.data.promotion = new_t.id;
         this.tiles[x][y] = new_t;
     }
 
     move_tile(tx, ty, fx, fy, p, valid){
         let extra = true;
         let selfcap = false;
+        let castles = false;
         if(valid){ //checking move list, not validity
             let move = this.get_array(valid, [tx, ty]);
             if(move.length > 2 && move[2] != null){
@@ -479,6 +565,7 @@ class Board{
                 if("castle" in data){
                     let t = this.get_tile(...data.castle.orig);
                     extra = this.move_tile(...data.castle.dest, ...data.castle.orig, t);
+                    castles = extra;
                 }
                 if("selfcapture" in data){
                     selfcap = data.selfcapture;
@@ -486,6 +573,20 @@ class Board{
             }
         }
         if(extra && this.set_tile(tx, ty, p, selfcap)){
+            let data = {
+                "from": [fx, fy],
+                "to": [tx, ty],
+                "piece_id": p.id,
+                "data": {}
+            };
+            if(this.capture_flag){
+                data.data.capture = true;
+                delete this.capture_flag;
+            }
+            if(castles){
+                data.data.castles = true;
+            }
+            this.move_history.push(data);
             if(p.should_promote(tx, ty)){
                 this.promote_piece(tx, ty, p);
             }
@@ -502,6 +603,7 @@ class Board{
                 if(t.was){
                     t = t.was;
                 }
+                this.capture_flag = true;
                 this.pockets[p.color].push(t);
                 this.tiles[x][y] = p;
                 return true;

@@ -277,6 +277,23 @@ class Board{
                         coord = [coord[0] + v[0], coord[1] + v[1] * dir];
                     }
                 }
+            }else if(tags.includes("enpassant") && !override){
+                let last_move = this.move_history[this.move_history.length - 1];
+                if(!last_move)break;
+                for(let v = 0; v < moves.length; v++){
+                    let dest = this.get_tile(x + moves[v][0], y + moves[v][1] * dir);
+                    let cap_coord = [x + i.captures[v][0], y + i.captures[v][1] * dir];
+                    let cap = this.get_tile(...cap_coord);
+                    if(cap && !dest){
+                        if(cap.color == self.color && !tags.includes("selfcapture"))continue;
+                        if(this.array_equal(last_move.to, cap_coord) && last_move.piece_id == self.id && last_move.data.first_move){
+                            let dist = Math.abs(last_move.to[1] - last_move.from[1]); //this is dumb
+                            if(dist > 1){
+                                valid.push([x + moves[v][0], y + moves[v][1] * dir, {"enpassant": cap_coord}]);
+                            }
+                        }
+                    }
+                }
             }
         }
         if(self.get_tags().includes("king") && !override){
@@ -365,7 +382,7 @@ class Board{
             }
         }
         if(this.draw_repeats){
-            let new_hash = this.hash_position();
+            let new_hash = this.hash_position(); //dict with count of each is faster
             let count = this.draw_repeats.previous.reduce(
                 function(a, v){
                     return v == new_hash ? a + 1 : a
@@ -558,6 +575,7 @@ class Board{
         let extra = true;
         let selfcap = false;
         let castles = false;
+        let enpassant = null;
         if(valid){ //checking move list, not validity
             let move = this.get_array(valid, [tx, ty]);
             if(move.length > 2 && move[2] != null){
@@ -569,6 +587,14 @@ class Board{
                 }
                 if("selfcapture" in data){
                     selfcap = data.selfcapture;
+                }
+                if("enpassant" in data){
+                    let t = this.get_tile(...data.enpassant);
+                    if(t.color == p.color && !selfcap)return false;
+                    this.capture_flag = true;
+                    this.pockets[p.color].push(t);
+                    this.tiles[data.enpassant[0]][data.enpassant[1]] = null;
+                    enpassant = data.enpassant;
                 }
             }
         }
@@ -586,6 +612,12 @@ class Board{
             if(castles){
                 data.data.castles = true;
             }
+            if(!p.has_moved){
+                data.data.first_move = true;
+            }
+            if(enpassant){
+                data.data.enpassant = enpassant;
+            }
             this.move_history.push(data);
             if(p.should_promote(tx, ty)){
                 this.promote_piece(tx, ty, p);
@@ -594,6 +626,7 @@ class Board{
             this.tiles[fx][fy] = null;
             return true;
         }
+        return false;
     }
 
     set_tile(x, y, p, selfcap){
@@ -785,7 +818,8 @@ class Piece{
         "moves":[
             {"moves": [[0, 1]], "tags": ["jump", "noncapture"]},
             {"moves": [[1, 1], [-1, 1]], "tags": ["captureonly", "jump"]}, //en passant as well?
-            {"moves": [[0, 2]], "tags": ["first", "noncapture", "blocked", "jump"], "by": [0, 1]}
+            {"moves": [[0, 2]], "tags": ["first", "noncapture", "blocked", "jump"], "by": [0, 1]},
+            {"moves": [[1, 1], [-1, 1]], "tags": ["enpassant"], "captures": [[1, 0], [-1, 0]]}
         ],
         "icon": {
             "type": "char",

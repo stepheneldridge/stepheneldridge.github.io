@@ -8,35 +8,60 @@ function init(){
     canvas.width = 1000;
     canvas.height = 1000;
     board = new Board(1000,1000);
-    board.draw(context);
+    let settings = {
+        "grid": {
+            "x": 8,
+            "y": 8,
+            "checkered": true,
+            "colors": ["#f0d9b5", "#b58863"]
+        },
+        "rules": {
+            "draws": {//no insuf mat
+                "timer": {"ply": 100, "reset_pieces": ["pawn"]},
+                "repeats": 3,
+                "stalemate": true//maybe independent?
+            },
+            "wins": {
+                "checkmate": { //if white is true, then white can be checkmated by black
+                    "white": true,
+                    "black": true
+                } // need capture all
+            }
+        },
+        "pieces": {
+            "pawn": Piece.PAWN,
+            "rook": Piece.ROOK,
+            "knight": Piece.KNIGHT,
+            "bishop": Piece.BISHOP,
+            "queen": Piece.QUEEN,
+            "king": Piece.KING
+        },
+        "layout": {
+            "white": {
+                "pawn": [[0, 6], [1, 6], [2, 6], [3, 6], [4, 6], [5, 6], [6, 6], [7, 6]],
+                "rook": [[0, 7], [7, 7]],
+                "knight": [[1, 7], [6, 7]],
+                "bishop": [[2, 7], [5, 7]],
+                "queen": [[3, 7]],
+                "king": [[4, 7]]
+            },
+            "black": {
+                "pawn": [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1]],
+                "rook": [[0, 0], [7, 0]],
+                "knight": [[1, 0], [6, 0]],
+                "bishop": [[2, 0], [5, 0]],
+                "queen": [[3, 0]],
+                "king": [[4, 0]]
+            }
+        }
+    }
+    board.load_variant(settings);
+    board.start_game();
     var events = ["onmousedown", "onmouseup", "onmousemove"];
     //  "ontouchstart", "ontouchend", "ontouchmove" later
-    for(i of events){
+    for(let i of events){
         canvas[i] = mouse_handler;
     }
-    board.set_tile(0, 0, new Piece(Piece.ROOK, "black"));
-    board.set_tile(1, 0, new Piece(Piece.KNIGHT, "black"));
-    board.set_tile(2, 0, new Piece(Piece.BISHOP, "black"));
-    board.set_tile(3, 0, new Piece(Piece.QUEEN, "black"));
-    board.set_tile(4, 0, new Piece(Piece.KING, "black"));
-    board.set_tile(5, 0, new Piece(Piece.BISHOP, "black"));
-    board.set_tile(6, 0, new Piece(Piece.KNIGHT, "black"));
-    board.set_tile(7, 0, new Piece(Piece.ROOK, "black"));
-    for(let i = 0; i < 8; i++){
-        board.set_tile(i, 1, new Piece(Piece.PAWN, "black"));
-        board.set_tile(i, 6, new Piece(Piece.PAWN, "white"));
-    }
-
-
-    board.set_tile(0, 7, new Piece(Piece.ROOK, "white"));
-    board.set_tile(1, 7, new Piece(Piece.KNIGHT, "white"));
-    board.set_tile(2, 7, new Piece(Piece.BISHOP, "white"));
-    board.set_tile(3, 7, new Piece(Piece.QUEEN, "white"));
-    board.set_tile(4, 7, new Piece(Piece.KING, "white"));
-    board.set_tile(5, 7, new Piece(Piece.BISHOP, "white"));
-    board.set_tile(6, 7, new Piece(Piece.KNIGHT, "white"));
-    board.set_tile(7, 7, new Piece(Piece.ROOK, "white"));
-    board.draw_repeats.previous.push(board.hash_position()); //add after game start
     board.draw(context);
 }
 
@@ -131,10 +156,15 @@ class Board{
     constructor(w, h){
         this.width = w;
         this.height = h;
-        this.set_grid(8, 8); // hard coded for now
-        this.checkered = true; //
-        this.check_colors = ["#f0d9b5", "#b58863"]; //
+        this.mouse_x = 0;
+        this.mouse_y = 0;
+    }
+
+    start_game(){
         this.selected_piece = null;
+        this.ply = 1;
+        this.turn = "white";
+        this.move_history = [];
         this.pockets = {
             "white": [],
             "black": []
@@ -143,19 +173,45 @@ class Board{
             "white": false,
             "black": false
         }
-        this.mouse_x = 0;
-        this.mouse_y = 0;
-        this.piece_types = [Piece.PAWN, Piece.ROOK, Piece.KNIGHT, Piece. BISHOP, Piece.QUEEN, Piece.KING]; //
-        this.piece_index = [];
-        for(let i = 0; i < this.piece_types.length; i++){
-            this.piece_index.push(this.piece_types[i].id);
+        let colors = ["white", "black"];
+        for(let color of colors){
+            for(let p in this.layout[color]){
+                for(let coord of this.layout[color][p]){
+                    this.set_tile(coord[0], coord[1], new Piece(this.pieces[p], color));
+                }
+            }
         }
-        this.ply = 1;
-        this.turn = "white";
-        this.promotion_window = false;
-        this.set_draw_time(100, [Piece.PAWN.id]); // 100 ply = 50 moves
-        this.set_draw_repeats(3); // 3 fold repetition
-        this.move_history = [];
+        if(this.draw_timer){
+            this.draw_timer.last_reset = 0;
+        }
+        if(this.draw_repeats){
+            this.draw_repeats.previous = [board.hash_position()];
+        }
+    }
+
+    load_variant(settings){
+        this.set_grid(settings.grid.x, settings.grid.y);
+        this.checkered = settings.grid.checkered ? true : false;
+        this.check_colors = settings.grid.colors;
+        let draws = settings.rules.draws;
+        if(draws){
+            if(draws.timer){
+                this.set_draw_time(draws.timer.ply, draws.timer.reset_pieces);
+            }
+            if(draws.repeats){
+                this.set_draw_repeats(draws.repeats);
+            }
+            this.stalemate = draws.stalemate ? true : false;
+        }
+        this.checkmate = settings.rules.wins.checkmate;
+        this.piece_types = [];
+        this.piece_index = [];
+        this.pieces = settings.pieces; //switch everything to this
+        for(let i in settings.pieces){
+            this.piece_index.push(i);
+            this.piece_types.push(settings.pieces[i]);
+        }
+        this.layout = settings.layout;
     }
 
     set_draw_time(time, reset_pieces){
@@ -179,6 +235,13 @@ class Board{
             "repeats": r,
             "previous": []
         }
+    }
+
+    get_checkmate(color){
+        if(this.checkmate){
+            return this.checkmate[color];
+        }
+        return false;
     }
     //tags jump noncapture captureonly first blocked repeat king selfcapture
     get_valid_moves(x, y, movements, ignore, walls, override){
@@ -216,7 +279,7 @@ class Board{
                             if(tags.includes("captureonly"))continue;
                             valid.push(coord);
                         }else{
-                            if(this.has_array(walls, coord))continue;
+                            if(this.has_array(walls, coord))continue; //does this make sense?
                             if(tags.includes("noncapture"))continue;
                             if((tags.includes("selfcapture") && t.color == self.color) || self.color != t.color){
                                 valid.push([...coord, {"selfcapture": tags.includes("selfcapture")}]);
@@ -248,7 +311,7 @@ class Board{
                 }
             }else if(tags.includes("castle")){
                 if(self.has_moved)continue;
-                if(this.checks[self.color])continue;
+                if(this.checks[self.color] && this.get_checkmate(self.color))continue;
                 for(let v of moves){
                     let coord = [x + v[0], y + v[1] * dir];
                     while(this.is_inside(...coord)){
@@ -259,7 +322,7 @@ class Board{
                         if(t != null){
                             if(t.get_tags().includes("castle") && !t.has_moved){
                                 let through_check = false;
-                                if(!override){
+                                if(!override && this.get_checkmate(self.color)){
                                     for(let s = 0; s < i.distance; s++){
                                         let temp = [x + v[0] * s, y + v[1] * dir * s]
                                         if(this.is_attacked(...temp, [[x, y]], [[]], self)){
@@ -277,43 +340,50 @@ class Board{
                         coord = [coord[0] + v[0], coord[1] + v[1] * dir];
                     }
                 }
-            }else if(tags.includes("enpassant") && !override){
+            }else if(tags.includes("enpassant") && !override){ //since only pawns can do this
                 let last_move = this.move_history[this.move_history.length - 1];
                 if(!last_move)break;
                 for(let v = 0; v < moves.length; v++){
-                    let dest = this.get_tile(x + moves[v][0], y + moves[v][1] * dir);
+                    let dest_coord = [x + moves[v][0], y + moves[v][1] * dir];
+                    let dest = this.get_tile(...dest_coord);
                     let cap_coord = [x + i.captures[v][0], y + i.captures[v][1] * dir];
                     let cap = this.get_tile(...cap_coord);
+                    if(this.has_array(ignore, cap_coord) || this.has_array(walls, cap_coord) || this.has_array(walls, dest_coord))continue;
+                    if(this.has_array(ignore, dest_coord)){
+                        dest = null;
+                    }
                     if(cap && !dest){
                         if(cap.color == self.color && !tags.includes("selfcapture"))continue;
                         if(this.array_equal(last_move.to, cap_coord) && last_move.piece_id == self.id && last_move.data.first_move){
                             let dist = Math.abs(last_move.to[1] - last_move.from[1]); //this is dumb
                             if(dist > 1){
-                                valid.push([x + moves[v][0], y + moves[v][1] * dir, {"enpassant": cap_coord}]);
+                                valid.push([dest_coord[0], dest_coord[1], {"enpassant": cap_coord}]);
                             }
                         }
                     }
                 }
             }
         }
-        if(self.get_tags().includes("king") && !override){
-            let unchecked = []
-            for(let i of valid){
-                if(!this.is_attacked(i[0], i[1], [[x, y]], [[]], self)){
-                    unchecked.push(i);
-                }
-            }
-            valid = unchecked;
-        }else if(!override){
-            let unchecked = [];
-            let k = this.find_king(self.color);
-            if(k){
+        if(this.get_checkmate(self.color)){
+            if(self.get_tags().includes("king") && !override){
+                let unchecked = []
                 for(let i of valid){
-                    if(!this.is_attacked(k[0], k[1], [[x, y]], [i], k[2])){
+                    if(!this.is_attacked(i[0], i[1], [[x, y]], [[]], self)){
                         unchecked.push(i);
                     }
                 }
                 valid = unchecked;
+            }else if(!override){
+                let unchecked = [];
+                let k = this.find_king(self.color);
+                if(k){
+                    for(let i of valid){
+                        if(!this.is_attacked(k[0], k[1], [[x, y]], [i], k[2])){
+                            unchecked.push(i);
+                        }
+                    }
+                    valid = unchecked;
+                }
             }
         }
         return valid;
@@ -342,6 +412,19 @@ class Board{
             }
         }
         return moves.length > 0;
+    }
+
+    has_pieces(color){
+        for(let i = 0; i < this.tiles.length; i++){
+            for(let j = 0; j < this.tiles[i].length; j++){
+                let t = this.tiles[i][j];
+                if(t == null)continue;
+                if(t.color == color){
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     has_moves(color){
@@ -490,6 +573,7 @@ class Board{
                         this.turn = this.turn == "white" ? "black" : "white";
                         this.ply += 1;
                         for(let c in this.checks){
+                            if(!this.get_checkmate(c))continue;
                             let k = this.find_king(c);
                             if(k != null){
                                 this.checks[c] = this.is_attacked(k[0], k[1]);
@@ -500,7 +584,25 @@ class Board{
                         }
                         let can_move = this.has_moves(this.turn);
                         if(!can_move){ //checkmate and stalemate
+                            let in_check = this.checks[this.turn];
                             let result = !this.checks[this.turn] ? "draw" : this.turn == "white" ? "black" : "white";
+                            if(in_check){
+                                if(this.get_checkmate(this.turn)){
+                                    result = this.turn == "white" ? "black" : "white";
+                                }else{
+                                    result = "draw";
+                                }
+                            }
+                            if(!in_check){
+                                if(this.stalemate){
+                                    result = "draw";
+                                }else{
+                                    result = this.turn == "white" ? "black" : "white";
+                                }
+                            }
+                            if(!this.has_pieces(this.turn)){ //default win if everything is captured
+                                result = this.turn == "white" ? "black" : "white";
+                            }
                             this.end_window = new EndWindow(result, this);
                         }
                         if(this.check_draws()){
@@ -545,7 +647,7 @@ class Board{
     }
 
     is_inside(x, y){
-        return  x >= 0 && x < this.tiles.length && y >= 0 && y < this.tiles[0].length
+        return  x >= 0 && x < this.tiles.length && y >= 0 && y < this.tiles[0].length;
     }
 
     get_tile(x, y){
@@ -656,9 +758,9 @@ class Board{
         this.size_x = this.width / this.tiles_x;
         this.size_y = this.height / this.tiles_y;
         this.tiles = [];
-        for(let i = 0; i < y; i++){
+        for(let i = 0; i < x; i++){
             let row = [];
-            for(let j = 0; j < x; j++){
+            for(let j = 0; j < y; j++){
                 row.push(null);
             }
             this.tiles.push(row);
@@ -666,16 +768,29 @@ class Board{
     }
 
     draw(ctx){
-        let check = 0;
-        for(let i = 0; i < this.tiles_x; i++){
-            for(let j = 0; j < this.tiles_y; j++){
-                ctx.fillStyle = this.check_colors[check];
+        if(this.checkered){
+            let check = 0;
+            for(let i = 0; i < this.tiles_x; i++){
+                for(let j = 0; j < this.tiles_y; j++){
+                    ctx.fillStyle = this.check_colors[check];
+                    check = check == 0 ? 1 : 0;
+                    ctx.fillRect(i * this.size_x, j * this.size_y, this.size_x, this.size_y);
+                }
                 check = check == 0 ? 1 : 0;
-                ctx.fillRect(i * this.size_x, j * this.size_y, this.size_x, this.size_y);
             }
-            check = check == 0 ? 1 : 0;
+        }else{
+            let border = 2;
+            for(let i = 0; i < this.tiles_x; i++){
+                for(let j = 0; j < this.tiles_y; j++){
+                    ctx.fillStyle = this.check_colors[0];
+                    ctx.fillRect(i * this.size_x, j * this.size_y, this.size_x, this.size_y);
+                    ctx.fillStyle = this.check_colors[1];
+                    ctx.fillRect(i * this.size_x + border, j * this.size_y + border, this.size_x - 2 * border, this.size_y - 2 * border);
+                }
+            }
         }
         for(let c in this.checks){
+            if(!this.get_checkmate(c))continue;
             if(!this.checks[c])continue;
             let k = this.find_king(c);
             ctx.fillStyle = "red";

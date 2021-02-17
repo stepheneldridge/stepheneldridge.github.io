@@ -7,7 +7,7 @@ function init(){
     document.body.appendChild(canvas);
     canvas.width = 1000;
     canvas.height = 1000;
-    board = new Board(1000,1000);
+    board = new Board(1000, 1000, "white");
     let settings = {
         "grid": {
             "x": 8,
@@ -25,7 +25,7 @@ function init(){
                 "checkmate": { //if white is true, then white can be checkmated by black
                     "white": true,
                     "black": true
-                } // need capture all
+                }
             }
         },
         "pieces": {
@@ -55,8 +55,67 @@ function init(){
             }
         }
     }
+    //horde
+    // Piece.PAWN.moves[3].pieces.push("npawn");
+    // let new_pawn = JSON.parse(JSON.stringify(Piece.PAWN));
+    // new_pawn.id = "npawn";
+    // new_pawn.moves.splice(2, 1);
+    // settings = {
+    //     "grid": {
+    //         "x": 8,
+    //         "y": 8,
+    //         "checkered": true,
+    //         "colors": ["#f0d9b5", "#b58863"]
+    //     },
+    //     "rules": {
+    //         "draws": {//no insuf mat
+    //             "timer": {"ply": 100, "reset_pieces": ["pawn"]},
+    //             "repeats": 3,
+    //             "stalemate": true//maybe independent?
+    //         },
+    //         "wins": {
+    //             "checkmate": { //if white is true, then white can be checkmated by black
+    //                 "white": false,
+    //                 "black": true
+    //             }
+    //         }
+    //     },
+    //     "pieces": {
+    //         "npawn": new_pawn,
+    //         "pawn": Piece.PAWN,
+    //         "rook": Piece.ROOK,
+    //         "knight": Piece.KNIGHT,
+    //         "bishop": Piece.BISHOP,
+    //         "queen": Piece.QUEEN,
+    //         "king": Piece.KING
+    //     },
+    //     "layout": {
+    //         "white": {
+    //             "npawn": [
+    //                 [1, 3], [2, 3], [5, 3], [6, 3],
+    //                 [0, 4], [1, 4], [2, 4], [3, 4], [4, 4], [5, 4], [6, 4], [7, 4],
+    //                 [0, 5], [1, 5], [2, 5], [3, 5], [4, 5], [5, 5], [6, 5], [7, 5],
+    //             ],
+    //             "pawn": [
+    //                 [0, 6], [1, 6], [2, 6], [3, 6], [4, 6], [5, 6], [6, 6], [7, 6],
+    //                 [0, 7], [1, 7], [2, 7], [3, 7], [4, 7], [5, 7], [6, 7], [7, 7],
+    //             ]
+    //         },
+    //         "black": {
+    //             "pawn": [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1]],
+    //             "rook": [[0, 0], [7, 0]],
+    //             "knight": [[1, 0], [6, 0]],
+    //             "bishop": [[2, 0], [5, 0]],
+    //             "queen": [[3, 0]],
+    //             "king": [[4, 0]]
+    //         }
+    //     }
+    // }
     board.load_variant(settings);
     board.start_game();
+    canvas.oncontextmenu = function(event){
+        return false;
+    }
     var events = ["onmousedown", "onmouseup", "onmousemove"];
     //  "ontouchstart", "ontouchend", "ontouchmove" later
     for(let i of events){
@@ -153,14 +212,16 @@ class EndWindow{
 }
 
 class Board{
-    constructor(w, h){
+    constructor(w, h, view){
         this.width = w;
         this.height = h;
         this.mouse_x = 0;
         this.mouse_y = 0;
+        this.view = view;
     }
 
     start_game(){
+        this.annotations = [];
         this.selected_piece = null;
         this.ply = 1;
         this.turn = "white";
@@ -212,6 +273,11 @@ class Board{
             this.piece_types.push(settings.pieces[i]);
         }
         this.layout = settings.layout;
+    }
+
+    clear_annotations(){
+        this.annotations = [];
+        this.active_annotation = null;
     }
 
     set_draw_time(time, reset_pieces){
@@ -354,7 +420,7 @@ class Board{
                     }
                     if(cap && !dest){
                         if(cap.color == self.color && !tags.includes("selfcapture"))continue;
-                        if(this.array_equal(last_move.to, cap_coord) && last_move.piece_id == self.id && last_move.data.first_move){
+                        if(this.array_equal(last_move.to, cap_coord) && i.pieces.includes(last_move.piece_id) && last_move.data.first_move){
                             let dist = Math.abs(last_move.to[1] - last_move.from[1]); //this is dumb
                             if(dist > 1){
                                 valid.push([dest_coord[0], dest_coord[1], {"enpassant": cap_coord}]);
@@ -430,7 +496,7 @@ class Board{
     has_moves(color){
         for(let i = 0; i < this.tiles.length; i++){
             for(let j = 0; j < this.tiles[i].length; j++){
-                let t = this.tiles[i][j];
+                let t = this.get_tile(i, j);
                 if(t == null)continue;
                 if(t.color == color){
                     if(this.get_valid_moves(i, j, t.get_moves()).length > 0){
@@ -445,7 +511,7 @@ class Board{
     find_king(color){
         for(let x = 0; x < this.tiles.length; x++){
             for(let y = 0; y < this.tiles[x].length; y++){
-                let t = this.tiles[x][y];
+                let t = this.get_tile(x, y);
                 if(t != null && t.get_tags().includes("king") && t.color == color)return [x, y, t];
             }
         }
@@ -492,7 +558,7 @@ class Board{
         let hash = "";
         for(let i = 0; i < this.tiles.length; i++){
             for(let j = 0; j < this.tiles[i].length; j++){
-                let p = this.tiles[i][j];
+                let p = this.tiles[i][j]; //this should be fine
                 if(p != null){
                     hash += "#" + this.piece_index.indexOf(p.id) + ":" + (i * this.tiles_y + j);
                 }
@@ -515,6 +581,10 @@ class Board{
         return false;
     }
 
+    deselect(){
+        this.selected_piece = null;
+    }
+
     update_drag(){
         this.selected_piece[2].drag_x = this.mouse_x / this.size_x;
         this.selected_piece[2].drag_y = this.mouse_y / this.size_y;
@@ -525,6 +595,21 @@ class Board{
             Math.floor(this.mouse_x / this.size_x),
             Math.floor(this.mouse_y / this.size_y)
         ];
+    }
+
+    create_annotation(x, y, type){
+        this.deselect();
+        if(type == "mousedown"){
+            this.active_annotation = {
+                "start": [x, y],
+                "end": [x, y]
+            }
+        }else if(type == "mouseup"){
+            if(!this.active_annotation)return;
+            this.active_annotation.end = [x, y];
+            this.annotations.push(this.active_annotation);
+            this.active_annotation = null;
+        }
     }
 
     mouse_events(event){
@@ -538,12 +623,20 @@ class Board{
         this.mouse_x = event.offsetX;
         this.mouse_y = event.offsetY;
         var type = event.type;
-        if(btn != 0)return;
         var mc = this.get_mouse_tile();
         var tx = mc[0];
         var ty = mc[1];
+        if(this.view == "black"){
+            tx = this.tiles_x - tx - 1;
+            ty = this.tiles_y - ty - 1;
+        }
+        if(btn == 2){
+            this.create_annotation(tx, ty, type);
+        }
+        if(btn != 0)return;
         switch(type){
             case "mousedown":
+                this.clear_annotations();
                 if(this.selected_piece == null){
                     return this.select(tx, ty);
                 }else{
@@ -609,17 +702,21 @@ class Board{
                             this.end_window = new EndWindow("draw", this);
                         }
                     }
-                    this.selected_piece = null;
+                    this.deselect();
                     return true;
                 }
-                break
+                break;
             case "mousemove":
-                if(this.selected_piece == null)return;
-                if(this.selected_piece[2].is_drag){
-                    this.update_drag();
-                    return true;
+                if(this.selected_piece != null){
+                    if(this.selected_piece[2].is_drag){
+                        this.update_drag();
+                        return true;
+                    }
                 }
-                break
+                if(this.active_annotation != null){
+                    this.active_annotation.end = [tx, ty];
+                }
+                break;
         }
     }
 
@@ -657,6 +754,13 @@ class Board{
         return null;
     }
 
+    change_tile(x, y, p){
+        if(this.is_inside(x, y)){
+            this.tiles[x][y] = p;
+            return true;
+        }
+        return false;
+    }
     //shogi can promote when leaving, not possible atm
     promote_piece(x, y, piece){
         this.promotion_window = new PromotionWindow(x, y, piece, this);
@@ -670,7 +774,7 @@ class Board{
         new_t.set_was(t);
         let last_history = this.move_history[this.move_history.length - 1];
         last_history.data.promotion = new_t.id;
-        this.tiles[x][y] = new_t;
+        this.change_tile(x, y, new_t);
     }
 
     move_tile(tx, ty, fx, fy, p, valid){
@@ -695,7 +799,7 @@ class Board{
                     if(t.color == p.color && !selfcap)return false;
                     this.capture_flag = true;
                     this.pockets[p.color].push(t);
-                    this.tiles[data.enpassant[0]][data.enpassant[1]] = null;
+                    this.change_tile(data.enpassant[0], data.enpassant[1], null);
                     enpassant = data.enpassant;
                 }
             }
@@ -725,7 +829,7 @@ class Board{
                 this.promote_piece(tx, ty, p);
             }
             p.has_moved = true;
-            this.tiles[fx][fy] = null;
+            this.change_tile(fx, fy, null);
             return true;
         }
         return false;
@@ -740,16 +844,12 @@ class Board{
                 }
                 this.capture_flag = true;
                 this.pockets[p.color].push(t);
-                this.tiles[x][y] = p;
+                this.change_tile(x, y, p);
                 return true;
             }
             //capture? or unhandled error?
-        }else if(this.is_inside(x, y)){
-            this.tiles[x][y] = p;
-            return true;
-        }else{
-            //invalid
         }
+        return this.change_tile(x, y, p);
     }
 
     set_grid(x, y){
@@ -770,13 +870,18 @@ class Board{
     draw(ctx){
         if(this.checkered){
             let check = 0;
+            if(this.view == "black"){
+                check = this.tiles_x % 2 == this.tiles_y % 2 ? 0 : 1;
+            }
             for(let i = 0; i < this.tiles_x; i++){
                 for(let j = 0; j < this.tiles_y; j++){
                     ctx.fillStyle = this.check_colors[check];
                     check = check == 0 ? 1 : 0;
                     ctx.fillRect(i * this.size_x, j * this.size_y, this.size_x, this.size_y);
                 }
-                check = check == 0 ? 1 : 0;
+                if(this.tiles_y % 2 == 0){
+                    check = check == 0 ? 1 : 0;
+                }
             }
         }else{
             let border = 2;
@@ -789,56 +894,113 @@ class Board{
                 }
             }
         }
+
         for(let c in this.checks){
             if(!this.get_checkmate(c))continue;
             if(!this.checks[c])continue;
             let k = this.find_king(c);
             ctx.fillStyle = "red";
             ctx.globalAlpha = 0.2;
-            ctx.fillRect(k[0] * this.size_x, k[1] * this.size_y, this.size_x, this.size_y);
+            let x, y;
+            if(this.view == "black"){
+                x = this.tiles_x - k[0] - 1;
+                y = this.tiles_y - k[1] - 1;
+            }else{
+                x = k[0];
+                y = k[1];
+            }
+            ctx.fillRect(x * this.size_x, y * this.size_y, this.size_x, this.size_y);
             ctx.globalAlpha = 1;
         }
         if(this.selected_piece != null){
             let mc = this.get_mouse_tile();
             for(let i of this.selected_piece[3]){
+                let c = i;
+                if(this.view == "black"){
+                    c = [this.tiles_x - i[0] - 1, this.tiles_y - i[1] - 1];
+                }
                 let t = this.get_tile(...i);
                 ctx.fillStyle = "green";
                 ctx.strokeStyle = "green";
-                if(i[0] == mc[0] && i[1] == mc[1]){
+                if(c[0] == mc[0] && c[1] == mc[1]){
                     ctx.globalAlpha = 0.2;
-                    ctx.fillRect(i[0] * this.size_x, i[1] * this.size_y, this.size_x, this.size_y);
+                    ctx.fillRect(c[0] * this.size_x, c[1] * this.size_y, this.size_x, this.size_y);
                 }else if(t != null){
                     ctx.lineWidth = "10";
                     ctx.globalAlpha = 0.5;
                     ctx.beginPath();
-                    ctx.rect(i[0] * this.size_x + 5, i[1] * this.size_y + 5, this.size_x - 10, this.size_y - 10);
+                    ctx.rect(c[0] * this.size_x + 5, c[1] * this.size_y + 5, this.size_x - 10, this.size_y - 10);
                     ctx.stroke();
                 }else{
                     ctx.globalAlpha = 0.5;
                     ctx.beginPath();
-                    ctx.arc((i[0] + 0.5) * this.size_x, (i[1] + 0.5) * this.size_y, Math.min(this.size_x, this.size_y) / 8, 0, 2 * Math.PI, false);
+                    ctx.arc((c[0] + 0.5) * this.size_x, (c[1] + 0.5) * this.size_y, Math.min(this.size_x, this.size_y) / 8, 0, 2 * Math.PI, false);
                     ctx.fill();
                 }
             }
             ctx.fillStyle = "green";
             ctx.globalAlpha = 0.2;
-            ctx.fillRect(this.selected_piece[0] * this.size_x, this.selected_piece[1] * this.size_y, this.size_x, this.size_y);
+            let x, y;
+            if(this.view == "black"){
+                x = this.tiles_x - this.selected_piece[0] - 1;
+                y = this.tiles_y - this.selected_piece[1] - 1;
+            }else{
+                x = this.selected_piece[0];
+                y = this.selected_piece[1];
+            }
+            ctx.fillRect(x * this.size_x, y * this.size_y, this.size_x, this.size_y);
             ctx.globalAlpha = 0.5;
-            this.selected_piece[2].draw(ctx, this.selected_piece[0], this.selected_piece[1], this.size_x, this.size_y);
+            this.selected_piece[2].draw(ctx, x, y, this.size_x, this.size_y);
             ctx.globalAlpha = 1;
         }
         for(let i in this.tiles){
-            for(let j in this.tiles[0]){
+            for(let j in this.tiles[i]){
                 let t = this.tiles[i][j];
                 if(t != null){
                     if(t.is_drag){
                         t.draw(ctx, t.drag_x - 0.5, t.drag_y - 0.5, this.size_x, this.size_y);
                     }else{
-                        t.draw(ctx, i, j, this.size_x, this.size_y);
+                        if(this.view == "black"){
+                            t.draw(ctx, this.tiles_x - i - 1, this.tiles_y - j - 1, this.size_x, this.size_y);
+                        }else{
+
+                            t.draw(ctx, i, j, this.size_x, this.size_y);
+                        }
                     }
                 }
             }
         }
+        ctx.strokeStyle = "grey";
+        ctx.fillStyle = "grey";
+        ctx.lineWidth = "10";
+        ctx.globalAlpha = 0.8;
+        ctx.lineCap = "round";
+        for(let i of this.annotations.concat([this.active_annotation])){
+            if(!i)continue;
+            let sx = (i.start[0] + 0.5) * this.size_x;
+            let sy = (i.start[1] + 0.5) * this.size_y;
+            let ex = (i.end[0] + 0.5) * this.size_x;
+            let ey = (i.end[1] + 0.5) * this.size_y;
+            if(this.array_equal(i.start, i.end)){
+                ctx.beginPath();
+                ctx.arc(sx, sy, Math.min(this.size_x, this.size_y) / 2 - 5, 0, 2 * Math.PI, false);
+                ctx.stroke();
+            }else{
+                let angle = Math.atan2(ey - sy, ex - sx);
+                let c = Math.PI / 5;
+                let r = 40;
+                let d = r * Math.sin(Math.PI / 2 - c);
+                ctx.beginPath();
+                ctx.moveTo(sx, sy);
+                ctx.lineTo(ex - d * Math.cos(angle), ey - d * Math.sin(angle));
+                ctx.lineTo(ex - r*Math.cos(angle + c), ey - r*Math.sin(angle + c));
+                ctx.lineTo(ex, ey);
+                ctx.lineTo(ex - r*Math.cos(angle - c), ey - r*Math.sin(angle - c));
+                ctx.lineTo(ex - d * Math.cos(angle), ey - d * Math.sin(angle));
+                ctx.stroke();
+            }
+        }
+        ctx.globalAlpha = 1;
         if(this.promotion_window){
             this.promotion_window.draw(ctx);
         }
@@ -920,11 +1082,11 @@ class Piece{
         "promotions": {
             "forced": true,
             "region": {
-                "black": function(x, y){
-                    return y >= 7
+                "black": {
+                    "y_min": 7
                 },
-                "white": function(x, y){
-                    return y <= 0;
+                "white": {
+                    "y_max": 0
                 }
             },
             "options": [Piece.ROOK, Piece.KNIGHT, Piece.BISHOP, Piece.QUEEN],
@@ -934,7 +1096,7 @@ class Piece{
             {"moves": [[0, 1]], "tags": ["jump", "noncapture"]},
             {"moves": [[1, 1], [-1, 1]], "tags": ["captureonly", "jump"]}, //en passant as well?
             {"moves": [[0, 2]], "tags": ["first", "noncapture", "blocked", "jump"], "by": [0, 1]},
-            {"moves": [[1, 1], [-1, 1]], "tags": ["enpassant"], "captures": [[1, 0], [-1, 0]]}
+            {"moves": [[1, 1], [-1, 1]], "tags": ["enpassant"], "captures": [[1, 0], [-1, 0]], "pieces": ["pawn"]}
         ],
         "icon": {
             "type": "char",
@@ -970,7 +1132,20 @@ class Piece{
 
     should_promote(x, y){
         if(this.tags.includes("promote")){
-            return this.preset.promotions.region[this.color](x,y);
+            let r = this.preset.promotions.region[this.color];
+            if(r.y_max != undefined && y > r.y_max){
+                return false;
+            }
+            if(r.y_min != undefined && y < r.y_min){
+                return false;
+            }
+            if(r.x_max != undefined && x > r.x_max){
+                return false;
+            }
+            if(r.x_min != undefined && x < r.x_min){
+                return false;
+            }
+            return true;
         }
         return false;
     }

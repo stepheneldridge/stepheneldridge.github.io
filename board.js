@@ -604,10 +604,20 @@ class Board{
                 "start": [x, y],
                 "end": [x, y]
             }
-        }else if(type == "mouseup"){
+        }else if(type == "mouseup"){ //delete dupes
             if(!this.active_annotation)return;
             this.active_annotation.end = [x, y];
-            this.annotations.push(this.active_annotation);
+            let exists = false;
+            for(let i in this.annotations){
+                if(this.array_equal(this.annotations[i].start, this.active_annotation.start) && this.array_equal(this.annotations[i].end, this.active_annotation.end)){
+                    this.annotations.splice(i, 1);
+                    exists = true;
+                    break;
+                }
+            }
+            if(!exists){
+                this.annotations.push(this.active_annotation);
+            }
             this.active_annotation = null;
         }
     }

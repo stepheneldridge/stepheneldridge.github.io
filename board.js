@@ -234,6 +234,7 @@ class Board{
             "white": false,
             "black": false
         }
+        //needs to clear board
         let colors = ["white", "black"];
         for(let color of colors){
             for(let p in this.layout[color]){
@@ -273,6 +274,101 @@ class Board{
             this.piece_types.push(settings.pieces[i]);
         }
         this.layout = settings.layout;
+    }
+
+    load_fen(fen){
+        this.start_game();
+        this.set_grid(this.tiles_x, this.tiles_y);
+        let piece_map = {};
+        for(let i in this.pieces){
+            piece_map[this.pieces[i].icon.fen] = this.pieces[i];
+        }
+        let parts = fen.split(" ");
+        let y = 0;
+        for(let row of parts[0].split("/")){
+            let x = 0;
+            let skip = 0;
+            for(let i of row){
+                if("1234567890".includes(i)){
+                    skip = skip * 10 + parseInt(i);
+                }else{
+                    x += Math.max(0, skip - 1);
+                    skip = 0;
+                    let white = i == i.toUpperCase();
+                    this.set_tile(x, y, new Piece(piece_map[i.toLowerCase()], white ? "white" : "black"));
+                }
+                x += 1;
+            }
+            y += 1;
+        }
+        this.turn = parts[1] == "w" ? "white" : "black";
+        for(let x of this.tiles){
+            for(let y of x){
+                if(y != null && y.get_tags().includes("castle")){
+                    y.has_moved = true;
+                }
+            }
+        }
+        let bk = this.find_king("black");
+        if(bk != null){
+            if(parts[2].includes("k")){
+                for(let i = bk[0]; i < this.tiles_x; i++){
+                    let t = this.get_tile(i, 0);
+                    if(t != null && t.get_tags().includes("castle")){
+                        t.has_moved = false;
+                    }
+                }
+            }
+            if(parts[2].includes("q")){
+                for(let i = bk[0]; i >= 0; i--){
+                    let t = this.get_tile(i, 0);
+                    if(t != null && t.get_tags().includes("castle")){
+                        t.has_moved = false;
+                    }
+                }
+            }
+        }
+        let wk = this.find_king("white");
+        if(wk != null){
+            if(parts[2].includes("K")){
+                for(let i = wk[0]; i < this.tiles_x; i++){
+                    let t = this.get_tile(i, this.tiles_y - 1);
+                    if(t != null && t.get_tags().includes("castle")){
+                        t.has_moved = false;
+                    }
+                }
+            }
+            if(parts[2].includes("Q")){
+                for(let i = wk[0]; i >= 0; i--){
+                    let t = this.get_tile(i, this.tiles_y - 1);
+                    if(t != null && t.get_tags().includes("castle")){
+                        t.has_moved = false;
+                    }
+                }
+            }
+        }
+        if(parts[3] != "-"){
+            let rank = 0;
+            let file = 0;
+            for(let i of parts[3]){
+                if("1234567890".includes(i)){
+                    rank = rank * 10 + parseInt(i);
+                }else{
+                    file = Math.ceil(file / 26) * 26 + i.charCodeAt(0) - 96;
+                }
+            }
+            file -= 1;
+            console.log(file, rank)
+            let offset = this.turn == "white" ? -1 : 1;
+            this.move_history.push({
+                "from": [file, this.tiles_y - (rank - offset)], //far away ig
+                "to": [file, this.tiles_y - (rank + offset)],
+                "piece_id": this.get_tile(file, this.tiles_y - (rank + offset)).id,
+                "data": {"first_move": true}
+            })
+        }
+        this.draw_timer.last_reset = parseInt(parts[4]);
+        this.ply = 2 * parseInt(parts[5]) - (this.turn == "white");
     }
 
     clear_annotations(){
@@ -604,7 +700,7 @@ class Board{
                 "start": [x, y],
                 "end": [x, y]
             }
-        }else if(type == "mouseup"){ //delete dupes
+        }else if(type == "mouseup"){
             if(!this.active_annotation)return;
             this.active_annotation.end = [x, y];
             let exists = false;
@@ -1003,9 +1099,9 @@ class Board{
                 ctx.beginPath();
                 ctx.moveTo(sx, sy);
                 ctx.lineTo(ex - d * Math.cos(angle), ey - d * Math.sin(angle));
-                ctx.lineTo(ex - r*Math.cos(angle + c), ey - r*Math.sin(angle + c));
+                ctx.lineTo(ex - r * Math.cos(angle + c), ey - r * Math.sin(angle + c));
                 ctx.lineTo(ex, ey);
-                ctx.lineTo(ex - r*Math.cos(angle - c), ey - r*Math.sin(angle - c));
+                ctx.lineTo(ex - r * Math.cos(angle - c), ey - r * Math.sin(angle - c));
                 ctx.lineTo(ex - d * Math.cos(angle), ey - d * Math.sin(angle));
                 ctx.stroke();
             }
@@ -1029,7 +1125,8 @@ class Piece{
         "icon": {
             "type": "char",
             "white": "♘",
-            "black": "♞"
+            "black": "♞",
+            "fen": "n"
         }
     }
 
@@ -1042,7 +1139,8 @@ class Piece{
         "icon": {
             "type": "char",
             "white": "♖",
-            "black": "♜"
+            "black": "♜",
+            "fen": "r"
         }
     }
 
@@ -1054,7 +1152,8 @@ class Piece{
         "icon": {
             "type": "char",
             "white": "♗",
-            "black": "♝"
+            "black": "♝",
+            "fen": "b"
         }
     }
 
@@ -1066,7 +1165,8 @@ class Piece{
         "icon": {
             "type": "char",
             "white": "♕",
-            "black": "♛"
+            "black": "♛",
+            "fen": "q"
         }
     }
 
@@ -1082,7 +1182,8 @@ class Piece{
         "icon": {
             "type": "char",
             "white": "♔",
-            "black": "♚"
+            "black": "♚",
+            "fen": "k"
         }
     }
 
@@ -1111,7 +1212,8 @@ class Piece{
         "icon": {
             "type": "char",
             "white": "♙",
-            "black": "♟"
+            "black": "♟",
+            "fen": "p"
         }
     }
     //tags jump noncapture captureonly first blocked repeat king

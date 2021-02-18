@@ -313,7 +313,7 @@ class Board{
         if(bk != null){
             if(parts[2].includes("k")){
                 for(let i = bk[0]; i < this.tiles_x; i++){
-                    let t = this.get_tile(i, 0);
+                    let t = this.get_tile(i, bk[1]);
                     if(t != null && t.get_tags().includes("castle")){
                         t.has_moved = false;
                     }
@@ -321,7 +321,7 @@ class Board{
             }
             if(parts[2].includes("q")){
                 for(let i = bk[0]; i >= 0; i--){
-                    let t = this.get_tile(i, 0);
+                    let t = this.get_tile(i, bk[1]);
                     if(t != null && t.get_tags().includes("castle")){
                         t.has_moved = false;
                     }
@@ -332,7 +332,7 @@ class Board{
         if(wk != null){
             if(parts[2].includes("K")){
                 for(let i = wk[0]; i < this.tiles_x; i++){
-                    let t = this.get_tile(i, this.tiles_y - 1);
+                    let t = this.get_tile(i, wk[1]);
                     if(t != null && t.get_tags().includes("castle")){
                         t.has_moved = false;
                     }
@@ -340,7 +340,7 @@ class Board{
             }
             if(parts[2].includes("Q")){
                 for(let i = wk[0]; i >= 0; i--){
-                    let t = this.get_tile(i, this.tiles_y - 1);
+                    let t = this.get_tile(i, wk[1]);
                     if(t != null && t.get_tags().includes("castle")){
                         t.has_moved = false;
                     }
@@ -358,7 +358,6 @@ class Board{
                 }
             }
             file -= 1;
-            console.log(file, rank)
             let offset = this.turn == "white" ? -1 : 1;
             this.move_history.push({
                 "from": [file, this.tiles_y - (rank - offset)], //far away ig
@@ -367,8 +366,111 @@ class Board{
                 "data": {"first_move": true}
             })
         }
-        this.draw_timer.last_reset = parseInt(parts[4]);
+        if(this.draw_timer){
+            this.draw_timer.last_reset = parseInt(parts[4]);
+        }
         this.ply = 2 * parseInt(parts[5]) - (this.turn == "white");
+    }
+
+    export_fen(){
+        let piece_map = {};
+        for(let i in this.pieces){
+            piece_map[this.pieces[i].id] = this.pieces[i].icon.fen;
+        }
+        let fen = "";
+        for(let y = 0; y < this.tiles_y; y++){
+            let skip = 0;
+            for(let x = 0; x < this.tiles_x; x++){
+                let t = this.get_tile(x, y);
+                if(t == null){
+                    skip += 1;
+                }else{
+                    if(skip > 0){
+                        fen += skip;
+                    }
+                    fen += t.color == "white" ? piece_map[t.id].toUpperCase() : piece_map[t.id];
+                    skip = 0;
+                }
+            }
+            if(skip > 0){
+                fen += skip;
+            }
+            if(y != this.tiles_y - 1){
+                fen += "/"
+            }
+        }
+        if(this.turn == "white"){
+            fen += " w ";
+        }else{
+            fen += " b ";
+        }
+        let wk = this.find_king("white");
+        let bk = this.find_king("black");
+        let castles = "";
+        if(wk != null && !wk[2].has_moved){
+            for(let i = wk[0]; i < this.tiles_x; i++){
+                let t = this.get_tile(i, wk[1]);
+                if(t != null && t.get_tags().includes("castle") && !t.has_moved){
+                    castles += "K";
+                    break;
+                }
+            }
+            for(let i = wk[0]; i >= 0; i--){
+                let t = this.get_tile(i, wk[1]);
+                if(t != null && t.get_tags().includes("castle") && !t.has_moved){
+                    castles += "Q";
+                    break;
+                }
+            }
+        }
+        if(bk != null && !bk[2].has_moved){
+            for(let i = bk[0]; i < this.tiles_x; i++){
+                let t = this.get_tile(i, bk[1]);
+                if(t != null && t.get_tags().includes("castle") && !t.has_moved){
+                    castles += "k";
+                    break;
+                }
+            }
+            for(let i = bk[0]; i >= 0; i--){
+                let t = this.get_tile(i, bk[1]);
+                if(t != null && t.get_tags().includes("castle") && !t.has_moved){
+                    castles += "q";
+                    break;
+                }
+            }
+        }
+        if(castles == ""){
+            fen += "- "
+        }else{
+            fen += castles + " ";
+        }
+        let enpassant = "-";
+        let last_move = this.move_history[this.move_history.length - 1];
+        if(last_move){
+            let t = this.get_tile(...last_move.to);
+            let coords = [[last_move.to[0] + 1, last_move.to[1]], [last_move.to[0] - 1, last_move.to[1]]];
+            for(let c of coords){
+                let n = this.get_tile(...c);
+                if(!n)continue;
+                let moves = this.get_valid_moves(...c, n.get_moves());
+                for(let i of moves){
+                    if(i.length > 2){
+                        if(i[2].enpassant && this.array_equal(i[2].enpassant, last_move.to)){
+                            enpassant = this.coordinate_label(i[0], i[1]);
+                        }
+                    }
+                }
+            }
+        }
+        fen += enpassant + " ";
+        if(this.draw_timer){
+            fen += this.draw_timer.last_reset;
+        }else{
+            fen += 0;
+        }
+        fen += " ";
+        fen += Math.ceil(this.ply / 2);
+        return fen;
     }
 
     clear_annotations(){
@@ -639,6 +741,10 @@ class Board{
             this.draw_repeats.previous.push(new_hash);
         }
         return false;
+    }
+
+    coordinate_label(x, y){
+        return this.file_label(x) + (this.tiles_y - y);
     }
 
     file_label(x){
@@ -1189,7 +1295,7 @@ class Piece{
 
     static PAWN = {
         "id": "pawn",
-        "tags": ["promote"],
+        "tags": ["promote", "enpassant"],
         "promotions": {
             "forced": true,
             "region": {

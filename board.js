@@ -276,7 +276,7 @@ class Board{
         this.layout = settings.layout;
     }
 
-    load_fen(fen){
+    import_fen(fen){
         this.start_game();
         this.set_grid(this.tiles_x, this.tiles_y);
         let piece_map = {};
@@ -471,6 +471,81 @@ class Board{
         fen += " ";
         fen += Math.ceil(this.ply / 2);
         return fen;
+    }
+
+    get_last_move(as_string){
+        let last = this.move_history[this.move_history.length - 1];
+        if(!last)return;
+        if(as_string){
+            return this.coordinate_label(...last.from) + this.coordinate_label(...last.to);
+        }else{
+            return last;
+        }
+    }
+
+    perform_move(data){
+        let move;
+        if(typeof data == "string"){
+            // move =  set later
+        }else if(typeof data == "object"){
+            move = data;
+        }
+        if(!move.to || !move.from)return false;
+        let t = move.piece;
+        if(!t){
+            t = this.get_tile(...move.from);
+        }
+        if(!t)return false;
+        if(t.color != this.turn)return false;
+        let moves = move.moves;
+        if(!moves){
+            moves = this.get_valid_moves(...move.from, t.get_moves());
+        }
+        //needs to handle chosen promotions too
+        if(this.has_array(moves, move.to)){
+            let could_move = this.move_tile(...move.to, ...move.from, t, moves);
+            if(!could_move)return false;
+            this.turn = this.turn == "white" ? "black" : "white";
+            this.ply += 1;
+            for(let c in this.checks){
+                if(!this.get_checkmate(c))continue;
+                let k = this.find_king(c);
+                if(k != null){
+                    this.checks[c] = this.is_attacked(k[0], k[1]);
+                }else{
+                    this.checks[c] = false;
+                }
+
+            }
+            let can_move = this.has_moves(this.turn);
+            if(!can_move){ //checkmate and stalemate
+                let in_check = this.checks[this.turn];
+                let result = !this.checks[this.turn] ? "draw" : this.turn == "white" ? "black" : "white";
+                if(in_check){
+                    if(this.get_checkmate(this.turn)){
+                        result = this.turn == "white" ? "black" : "white";
+                    }else{
+                        result = "draw";
+                    }
+                }
+                if(!in_check){
+                    if(this.stalemate){
+                        result = "draw";
+                    }else{
+                        result = this.turn == "white" ? "black" : "white";
+                    }
+                }
+                if(!this.has_pieces(this.turn)){ //default win if everything is captured
+                    result = this.turn == "white" ? "black" : "white";
+                }
+                this.end_window = new EndWindow(result, this);
+            }
+            if(this.check_draws()){
+                this.end_window = new EndWindow("draw", this);
+            }
+            return true;
+        }
+        return false;
     }
 
     clear_annotations(){
@@ -873,49 +948,15 @@ class Board{
                 }else{
                     //place if valid
                     this.selected_piece[2].is_drag = false;
-                    if(this.has_array(this.selected_piece[3], [tx, ty])){
-                        this.move_tile(tx, ty, ...this.selected_piece);
-                        this.turn = this.turn == "white" ? "black" : "white";
-                        this.ply += 1;
-                        for(let c in this.checks){
-                            if(!this.get_checkmate(c))continue;
-                            let k = this.find_king(c);
-                            if(k != null){
-                                this.checks[c] = this.is_attacked(k[0], k[1]);
-                            }else{
-                                this.checks[c] = false;
-                            }
-
-                        }
-                        let can_move = this.has_moves(this.turn);
-                        if(!can_move){ //checkmate and stalemate
-                            let in_check = this.checks[this.turn];
-                            let result = !this.checks[this.turn] ? "draw" : this.turn == "white" ? "black" : "white";
-                            if(in_check){
-                                if(this.get_checkmate(this.turn)){
-                                    result = this.turn == "white" ? "black" : "white";
-                                }else{
-                                    result = "draw";
-                                }
-                            }
-                            if(!in_check){
-                                if(this.stalemate){
-                                    result = "draw";
-                                }else{
-                                    result = this.turn == "white" ? "black" : "white";
-                                }
-                            }
-                            if(!this.has_pieces(this.turn)){ //default win if everything is captured
-                                result = this.turn == "white" ? "black" : "white";
-                            }
-                            this.end_window = new EndWindow(result, this);
-                        }
-                        if(this.check_draws()){
-                            this.end_window = new EndWindow("draw", this);
-                        }
+                    let data = {
+                        "to": [tx, ty],
+                        "from": [this.selected_piece[0], this.selected_piece[1]],
+                        "piece": this.selected_piece[2],
+                        "moves": this.selected_piece[3]
                     }
+                    let moved = this.perform_move(data)
                     this.deselect();
-                    return true;
+                    if(moved)return true;
                 }
                 break;
             case "mousemove":
